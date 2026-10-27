@@ -63,12 +63,25 @@ func isManifest(name string) bool {
 	return false
 }
 
+// isBundled spots third-party code shipped inside a project, such as the
+// default WordPress themes (wp-content/themes/twentytwentyfive) or core.
+func isBundled(p string) bool {
+	name := filepath.Base(p)
+	parent := filepath.Base(filepath.Dir(p))
+	if parent == "themes" && strings.HasPrefix(name, "twenty") {
+		return true
+	}
+	return name == "wp-admin" || name == "wp-includes"
+}
+
 // scanProject collects every manifest under dir (skipping vendor,
 // node_modules, nested git repositories...) and parses them as one project.
 func scanProject(dir string, maxDepth int) (*Project, error) {
 	dir, _ = filepath.Abs(dir)
+	_, err := os.Stat(filepath.Join(dir, ".git"))
+	rootIsRepo := err == nil
 	var files []string
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -77,12 +90,18 @@ func scanProject(dir string, maxDepth int) (*Project, error) {
 				return nil
 			}
 			rel, _ := filepath.Rel(dir, p)
-			if skipDirs[d.Name()] || strings.Count(rel, string(os.PathSeparator))+1 > maxDepth {
+			name := d.Name()
+			if skipDirs[name] || strings.HasPrefix(name, ".") || isBundled(p) ||
+				strings.Count(rel, string(os.PathSeparator))+1 > maxDepth {
 				return filepath.SkipDir
 			}
-			// A nested repository or worktree is another project.
-			if _, err := os.Lstat(filepath.Join(p, ".git")); err == nil {
-				return filepath.SkipDir
+			if gi, err := os.Lstat(filepath.Join(p, ".git")); err == nil {
+				// A worktree (.git file) is always a copy of another checkout.
+				// A nested repository is its own project, unless the scanned
+				// folder is not a repository itself: then it is a part of it.
+				if !gi.IsDir() || rootIsRepo {
+					return filepath.SkipDir
+				}
 			}
 			return nil
 		}

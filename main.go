@@ -243,20 +243,51 @@ func render(pr *Project, reg *Registry, all, verbose bool) {
 	// ---- packages per ecosystem ----
 	ecoTitles := []struct{ eco, title string }{{"composer", "Composer packages"}, {"npm", "npm packages"}, {"go", "Go modules"}}
 	for _, e := range ecoTitles {
-		var list []Component
-		hidden := 0
-		total := 0
+		// One line per package: the same package can come from several
+		// manifests (monorepo, plugins...) with different versions.
+		type pkgLine struct {
+			c        Component
+			versions []string
+			sources  []string
+		}
+		agg := map[string]*pkgLine{}
+		var order []string
 		for _, c := range pr.Components {
 			if c.Eco != e.eco || (!all && !c.Direct) {
 				continue
 			}
-			total++
-			counts[c.Status]++
-			if !verbose && (c.Status == "ok" || c.Status == "unknown") && c.Product == "" {
+			l, ok := agg[c.Name]
+			if !ok {
+				l = &pkgLine{c: c}
+				agg[c.Name] = l
+				order = append(order, c.Name)
+			} else if severity[c.Status] < severity[l.c.Status] {
+				st, ver := c, l.c.Version
+				l.c = st
+				l.c.Version = ver
+			}
+			l.c.Dev = l.c.Dev && c.Dev
+			l.versions = append(l.versions, c.Version)
+			l.sources = append(l.sources, c.Source)
+		}
+		var list []Component
+		hidden := 0
+		total := len(order)
+		origin := map[string]string{}
+		for _, n := range order {
+			l := agg[n]
+			vs := uniq(l.versions)
+			sort.Slice(vs, func(i, j int) bool { return cmpVersion(vs[i], vs[j]) < 0 })
+			l.c.Version = strings.Join(vs, ", ")
+			if dirs := uniqDirs(l.sources); len(dirs) > 1 {
+				origin[n] = strings.Join(dirs, ", ")
+			}
+			counts[l.c.Status]++
+			if !verbose && (l.c.Status == "ok" || l.c.Status == "unknown") && l.c.Product == "" {
 				hidden++
 				continue
 			}
-			list = append(list, c)
+			list = append(list, l.c)
 		}
 		if total == 0 {
 			continue
@@ -277,6 +308,9 @@ func render(pr *Project, reg *Registry, all, verbose bool) {
 			name := c.Name
 			if c.Dev {
 				name += col(cDim, " (dev)")
+			}
+			if o := origin[c.Name]; o != "" {
+				name += col(cDim, " · "+o)
 			}
 			ver := c.Version
 			if c.Declared {
@@ -346,6 +380,18 @@ func shortSources(sources []string) string {
 		out = append(out, label)
 	}
 	return strings.Join(uniq(out), ", ")
+}
+
+// uniqDirs returns the folders the manifests live in ("." for the root).
+func uniqDirs(sources []string) []string {
+	var out []string
+	for _, s := range sources {
+		file, _, _ := strings.Cut(s, " (")
+		out = append(out, filepath.Dir(file))
+	}
+	out = uniq(out)
+	sort.Strings(out)
+	return out
 }
 
 func section(t string) {
