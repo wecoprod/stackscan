@@ -109,8 +109,8 @@ stackscan states facts and never picks a target for you:
 | `✓` | up to date |
 | `?` | unknown |
 
-Tables adapt to the terminal width: empty columns are hidden, then `Source`,
-then long cells are shortened.
+Every project gets the same columns. On a narrow terminal, `Source` is hidden
+first, then `Latest LTS`, then long cells are shortened.
 
 A `*` after a version marks a **floating** reference: it can change without a commit (`redis:7`,
 `latest`…). stackscan reports what the repository **declares**, which is not

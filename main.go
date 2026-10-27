@@ -352,7 +352,7 @@ func latestText(c Component) string {
 
 func ltsText(c Component) string {
 	if c.LatestLTS == "" {
-		return ""
+		return col(cDim, "—")
 	}
 	return c.LatestLTS
 }
@@ -371,7 +371,12 @@ func shortSources(sources []string) string {
 		}
 		out = append(out, label)
 	}
-	return strings.Join(uniq(out), ", ")
+	out = uniq(out)
+	if len(out) > 1 {
+		// The Source column lists them all; keep the label short.
+		return fmt.Sprintf("%s +%d", out[0], len(out)-1)
+	}
+	return strings.Join(out, ", ")
 }
 
 func section(t string) {
@@ -443,22 +448,18 @@ func truncate(s string, w int) string {
 	return string(r[:w-1]) + "…"
 }
 
-// printTable draws a bordered table that fits the terminal: empty columns
-// are hidden, then the columns listed in drop (from the end), then the
-// widest cells are truncated.
+// printTable draws a bordered table that fits the terminal: the columns
+// listed in drop are hidden (last listed first), then the widest cells are
+// truncated.
 func printTable(headers []string, rows [][]string, drop ...int) {
 	if len(rows) == 0 {
 		return
 	}
+	// Same columns for every project: a column is only hidden when the
+	// terminal is too narrow, never because it happens to be empty.
 	keep := make([]bool, len(headers))
-	for i := range headers {
-		keep[i] = i == 0
-		for _, r := range rows {
-			if c := stripANSI(r[i]); c != "" && c != "—" {
-				keep[i] = true
-				break
-			}
-		}
+	for i := range keep {
+		keep[i] = true
 	}
 	widths := make([]int, len(headers))
 	calc := func() int {
