@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime/debug"
 	"sort"
@@ -213,6 +214,10 @@ func render(pr *Project, reg *Registry, all, verbose bool) {
 	})
 	if len(keys) > 0 {
 		section("Runtimes and services")
+		perProduct := map[string]int{}
+		for _, k := range keys {
+			perProduct[rt[k].c.Name]++
+		}
 		var rows [][]string
 		anyFloat := false
 		for _, k := range keys {
@@ -223,7 +228,11 @@ func render(pr *Project, reg *Registry, all, verbose bool) {
 				ver += col(cYellow, " *")
 				anyFloat = true
 			}
-			rows = append(rows, []string{icon(l.c.Status), l.c.Name, ver, latestText(l.c), eolText(l.c), statusText(l.c), col(cDim, strings.Join(uniq(l.sources), ", "))})
+			name := l.c.Name
+			if perProduct[l.c.Name] > 1 {
+				name += col(cDim, " ("+shortSources(l.sources)+")")
+			}
+			rows = append(rows, []string{icon(l.c.Status), name, ver, latestText(l.c), eolText(l.c), statusText(l.c), col(cDim, strings.Join(uniq(l.sources), ", "))})
 		}
 		printTable([]string{"", "Component", "Version", "Latest", "End of life", "Status", "Source"}, rows, 6)
 		if anyFloat {
@@ -320,6 +329,23 @@ func latestText(c Component) string {
 		return c.LatestLTS + " LTS " + col(cDim, "("+c.Latest+")")
 	}
 	return c.Latest
+}
+
+// shortSources turns "app/composer.json (config.platform)" into
+// "composer.json platform" and "compose.yaml (postgres)" into "compose.yaml".
+func shortSources(sources []string) string {
+	var out []string
+	for _, s := range sources {
+		file, detail, _ := strings.Cut(s, " (")
+		label := filepath.Base(file)
+		if strings.HasPrefix(detail, "config.platform") {
+			label += " platform"
+		} else if strings.HasPrefix(detail, "engines") {
+			label += " engines"
+		}
+		out = append(out, label)
+	}
+	return strings.Join(uniq(out), ", ")
 }
 
 func section(t string) {
