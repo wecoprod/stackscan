@@ -26,7 +26,7 @@ type Component struct {
 
 	// Filled by the enrich step.
 	Latest    string `json:"latest,omitempty"`
-	LatestLTS string `json:"latestLts,omitempty"` // newest LTS when it differs from Latest
+	LatestLTS string `json:"latestLts,omitempty"` // newest LTS, for products that publish LTS lines
 	EOL       string `json:"eol,omitempty"`       // YYYY-MM-DD, "" if unknown or none
 	Cycle     string `json:"cycle,omitempty"`
 	Status    string `json:"status,omitempty"` // eol | eol-soon | major | minor | ok | unknown

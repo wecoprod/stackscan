@@ -232,9 +232,9 @@ func render(pr *Project, reg *Registry, all, verbose bool) {
 			if perProduct[l.c.Name] > 1 {
 				name += col(cDim, " ("+shortSources(l.sources)+")")
 			}
-			rows = append(rows, []string{icon(l.c.Status), name, ver, latestText(l.c), eolText(l.c), statusText(l.c), col(cDim, strings.Join(uniq(l.sources), ", "))})
+			rows = append(rows, []string{icon(l.c.Status), name, ver, latestText(l.c), ltsText(l.c), eolText(l.c), statusText(l.c), col(cDim, strings.Join(uniq(l.sources), ", "))})
 		}
-		printTable([]string{"", "Component", "Version", "Latest", "End of life", "Status", "Source"}, rows, 6)
+		printTable([]string{"", "Component", "Version", "Latest", "Latest LTS", "End of life", "Status", "Source"}, rows, 4, 7)
 		if anyFloat {
 			fmt.Println(col(cDim, "* floating tag: can change without a commit (redis:7, latest...)"))
 		}
@@ -303,9 +303,9 @@ func render(pr *Project, reg *Registry, all, verbose bool) {
 				if c.Declared {
 					ver += col(cDim, " (declared)")
 				}
-				rows = append(rows, []string{icon(c.Status), name, ver, latestText(c), eolText(c), statusText(c)})
+				rows = append(rows, []string{icon(c.Status), name, ver, latestText(c), ltsText(c), eolText(c), statusText(c)})
 			}
-			printTable([]string{"", "Package", "Installed", "Latest", "End of life", "Status"}, rows, 4)
+			printTable([]string{"", "Package", "Installed", "Latest", "Latest LTS", "End of life", "Status"}, rows, 4, 5)
 			if hidden > 0 {
 				fmt.Println(col(cDim, fmt.Sprintf("+ %d up to date (-v to list them)", hidden)))
 			}
@@ -347,10 +347,14 @@ func latestText(c Component) string {
 	if c.Latest == "" {
 		return col(cDim, "—")
 	}
-	if c.LatestLTS != "" {
-		return c.LatestLTS + " LTS " + col(cDim, "("+c.Latest+")")
-	}
 	return c.Latest
+}
+
+func ltsText(c Component) string {
+	if c.LatestLTS == "" {
+		return ""
+	}
+	return c.LatestLTS
 }
 
 // shortSources turns "app/composer.json (config.platform)" into

@@ -180,11 +180,34 @@ func matchCycle(cycles []Cycle, version string) (Cycle, bool) {
 	return Cycle{}, false
 }
 
-// newestLTS returns the newest LTS cycle, if the product has any.
+func supported(c Cycle) bool {
+	if c.EOL == "" {
+		return true
+	}
+	d, err := time.Parse("2006-01-02", c.EOL)
+	return err == nil && d.After(time.Now())
+}
+
+// newestSupported returns the newest cycle still supported (falling back to
+// the newest cycle when the data has no supported one).
+func newestSupported(cycles []Cycle) (Cycle, bool) {
+	var live []Cycle
+	for _, c := range cycles {
+		if supported(c) {
+			live = append(live, c)
+		}
+	}
+	if c, ok := newestCycle(live); ok {
+		return c, true
+	}
+	return newestCycle(cycles)
+}
+
+// newestLTS returns the newest supported LTS cycle, if the product has any.
 func newestLTS(cycles []Cycle) (Cycle, bool) {
 	var lts []Cycle
 	for _, c := range cycles {
-		if c.LTS {
+		if c.LTS && supported(c) {
 			lts = append(lts, c)
 		}
 	}
@@ -325,13 +348,11 @@ func (r *Registry) enrichOne(c *Component) {
 			c.Cycle = cy.Cycle
 			c.EOL = cy.EOL
 		}
-		if nc, ok := newestCycle(cycles); ok {
+		if nc, ok := newestSupported(cycles); ok {
 			c.Latest = cycleLatest(nc)
-			// Products with LTS lines (MySQL, Node.js, Symfony...): the LTS is
-			// the production target; the newest release is shown alongside.
-			// Only when the LTS is ahead of the version in use: Composer's 2.2
-			// LTS, for instance, is a legacy branch, not an upgrade target.
-			if lc, ok := newestLTS(cycles); ok && lc.Cycle != nc.Cycle && cmpVersion(lc.Cycle, c.Version) >= 0 {
+			// Facts only, no recommendation: the newest release, and the
+			// newest LTS for every product that publishes LTS lines.
+			if lc, ok := newestLTS(cycles); ok {
 				c.LatestLTS = cycleLatest(lc)
 			}
 		}
@@ -389,9 +410,6 @@ func status(c *Component) string {
 		return "unknown"
 	}
 	target := c.Latest
-	if c.LatestLTS != "" {
-		target = c.LatestLTS
-	}
 	cur, lat := splitNums(numPart(c.Version)), splitNums(numPart(target))
 	if len(cur) == 0 || len(lat) == 0 {
 		return "unknown"

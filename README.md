@@ -89,6 +89,17 @@ built-in dataset covers PHP, Symfony, Node.js, PostgreSQL, MySQL and Python.
 
 ## Reading the output
 
+stackscan states facts and never picks a target for you:
+
+- **Latest** is the newest release that is still supported.
+- **Latest LTS** is the newest supported LTS, for products that publish LTS
+  lines (Node.js, MySQL, Symfony, Composer…). Whether it is the right target
+  depends on the product: MySQL's LTS is the production line, Composer's 2.2
+  LTS is a legacy branch for old PHP.
+- **Status** only looks at the end of life of the version you use, and flags
+  a newer major release.
+
+
 | Mark | Meaning |
 |---|---|
 | `✗` | end of life has passed |
