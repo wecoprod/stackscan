@@ -329,7 +329,9 @@ func (r *Registry) enrichOne(c *Component) {
 			c.Latest = cycleLatest(nc)
 			// Products with LTS lines (MySQL, Node.js, Symfony...): the LTS is
 			// the production target; the newest release is shown alongside.
-			if lc, ok := newestLTS(cycles); ok && lc.Cycle != nc.Cycle {
+			// Only when the LTS is ahead of the version in use: Composer's 2.2
+			// LTS, for instance, is a legacy branch, not an upgrade target.
+			if lc, ok := newestLTS(cycles); ok && lc.Cycle != nc.Cycle && cmpVersion(lc.Cycle, c.Version) >= 0 {
 				c.LatestLTS = cycleLatest(lc)
 			}
 		}

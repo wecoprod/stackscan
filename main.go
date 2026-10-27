@@ -354,12 +354,12 @@ func latestText(c Component) string {
 }
 
 // shortSources turns "app/composer.json (config.platform)" into
-// "composer.json platform" and "compose.yaml (postgres)" into "compose.yaml".
+// "app/composer.json platform" and "compose.yaml (postgres)" into "compose.yaml".
 func shortSources(sources []string) string {
 	var out []string
 	for _, s := range sources {
 		file, detail, _ := strings.Cut(s, " (")
-		label := filepath.Base(file)
+		label := file
 		if strings.HasPrefix(detail, "config.platform") {
 			label += " platform"
 		} else if strings.HasPrefix(detail, "engines") {
