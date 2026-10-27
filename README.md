@@ -7,14 +7,14 @@ are, and what is reaching end of life.
 $ cd my-project && stackscan
 
 Runtimes and services
-┌───┬────────────┬────────────────────┬────────┬─────────────┬────────────────┬──────────┬─────────────────────────────────┐
-│   │ Component  │ Version            │ Latest │ End of life │ Status         │ Floating │ Source                          │
-├───┼────────────┼────────────────────┼────────┼─────────────┼────────────────┼──────────┼─────────────────────────────────┤
-│ ✗ │ nodejs     │ 18                 │ 24     │ 2025-04-30  │ end of life    │ yes      │ Dockerfile (node)               │
-│ ! │ postgresql │ 14                 │ 18     │ 2026-11-12  │ EOL in 16 days │ yes      │ compose.yaml (postgres)         │
-│ · │ php        │ >=8.2 (constraint) │ 8.5    │ 2026-12-31  │ raise minimum  │          │ composer.json                   │
-│ ✓ │ php        │ 8.4                │ 8.5    │ 2028-12-31  │ up to date     │ yes      │ Dockerfile (dunglas/frankenphp) │
-└───┴────────────┴────────────────────┴────────┴─────────────┴────────────────┴──────────┴─────────────────────────────────┘
+┌───┬────────────┬─────────┬────────┬─────────────┬────────────────┬─────────────────────────────────┐
+│   │ Component  │ Version │ Latest │ End of life │ Status         │ Source                          │
+├───┼────────────┼─────────┼────────┼─────────────┼────────────────┼─────────────────────────────────┤
+│ ✗ │ nodejs     │ 18 *    │ 24     │ 2025-04-30  │ end of life    │ Dockerfile (node)               │
+│ ! │ postgresql │ 14 *    │ 18     │ 2026-11-12  │ EOL in 16 days │ compose.yaml (postgres)         │
+│ · │ php        │ >=8.2   │ 8.5    │ 2026-12-31  │ raise minimum  │ composer.json                   │
+│ ✓ │ php        │ 8.4 *   │ 8.5    │ 2028-12-31  │ up to date     │ Dockerfile (dunglas/frankenphp) │
+└───┴────────────┴─────────┴────────┴─────────────┴────────────────┴─────────────────────────────────┘
 
 Composer packages (4 direct)
 ┌───┬──────────────────────────┬───────────┬────────┬─────────────┬─────────────┐
@@ -98,7 +98,10 @@ built-in dataset covers PHP, Symfony, Node.js, PostgreSQL, MySQL and Python.
 | `✓` | up to date |
 | `?` | unknown |
 
-**Floating** means the reference can change without a commit (`redis:7`,
+Tables adapt to the terminal width: empty columns are hidden, then `Source`,
+then long cells are shortened.
+
+A `*` after a version marks a **floating** reference: it can change without a commit (`redis:7`,
 `latest`…). stackscan reports what the repository **declares**, which is not
 necessarily what runs in production — check managed databases and running
 containers separately.

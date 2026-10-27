@@ -11,8 +11,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
+	"regexp"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -211,20 +214,21 @@ func render(pr *Project, reg *Registry, all, verbose bool) {
 	if len(keys) > 0 {
 		section("Runtimes and services")
 		var rows [][]string
+		anyFloat := false
 		for _, k := range keys {
 			l := rt[k]
 			counts[l.c.Status]++
 			ver := l.c.Version
-			if l.c.Declared && strings.ContainsAny(ver, "<>=^~*|") {
-				ver = ver + " (constraint)"
-			}
-			float := ""
 			if l.float {
-				float = col(cYellow, "yes")
+				ver += col(cYellow, " *")
+				anyFloat = true
 			}
-			rows = append(rows, []string{icon(l.c.Status), l.c.Name, ver, latestText(l.c), eolText(l.c), statusText(l.c), float, col(cDim, strings.Join(uniq(l.sources), ", "))})
+			rows = append(rows, []string{icon(l.c.Status), l.c.Name, ver, latestText(l.c), eolText(l.c), statusText(l.c), col(cDim, strings.Join(uniq(l.sources), ", "))})
 		}
-		printTable([]string{"", "Component", "Version", "Latest", "End of life", "Status", "Floating", "Source"}, rows)
+		printTable([]string{"", "Component", "Version", "Latest", "End of life", "Status", "Source"}, rows, 6)
+		if anyFloat {
+			fmt.Println(col(cDim, "* floating tag: can change without a commit (redis:7, latest...)"))
+		}
 	}
 
 	// ---- packages per ecosystem ----
@@ -271,7 +275,7 @@ func render(pr *Project, reg *Registry, all, verbose bool) {
 			}
 			rows = append(rows, []string{icon(c.Status), name, ver, latestText(c), eolText(c), statusText(c)})
 		}
-		printTable([]string{"", "Package", "Installed", "Latest", "End of life", "Status"}, rows)
+		printTable([]string{"", "Package", "Installed", "Latest", "End of life", "Status"}, rows, 4)
 		if hidden > 0 {
 			fmt.Println(col(cDim, fmt.Sprintf("+ %d up to date (-v to list them)", hidden)))
 		}
@@ -341,30 +345,123 @@ func visibleLen(s string) int {
 	return utf8.RuneCountInString(reANSI.Replace(s))
 }
 
-// printTable draws a bordered table. Cells may contain ANSI colours.
-func printTable(headers []string, rows [][]string) {
+// termWidth returns the terminal width, or 0 when unknown (output piped).
+func termWidth() int {
+	if n, err := strconv.Atoi(os.Getenv("COLUMNS")); err == nil && n > 0 {
+		return n
+	}
+	if !useColor { // not a terminal, or colors disabled on purpose
+		if st, err := os.Stdout.Stat(); err != nil || st.Mode()&os.ModeCharDevice == 0 {
+			return 0
+		}
+	}
+	tty, err := os.Open("/dev/tty")
+	if err != nil {
+		return 0
+	}
+	defer tty.Close()
+	cmd := exec.Command("stty", "size")
+	cmd.Stdin = tty
+	out, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+	f := strings.Fields(string(out))
+	if len(f) != 2 {
+		return 0
+	}
+	n, _ := strconv.Atoi(f[1])
+	return n
+}
+
+var reEsc = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func stripANSI(s string) string { return reEsc.ReplaceAllString(s, "") }
+
+// truncate shortens a cell to w visible characters, keeping its colour
+// codes only when it already fits.
+func truncate(s string, w int) string {
+	if visibleLen(s) <= w {
+		return s
+	}
+	r := []rune(stripANSI(s))
+	if w <= 1 {
+		return string(r[:w])
+	}
+	return string(r[:w-1]) + "…"
+}
+
+// printTable draws a bordered table that fits the terminal: empty columns
+// are hidden, then the columns listed in drop (from the end), then the
+// widest cells are truncated.
+func printTable(headers []string, rows [][]string, drop ...int) {
 	if len(rows) == 0 {
 		return
 	}
-	widths := make([]int, len(headers))
-	for i, h := range headers {
-		widths[i] = visibleLen(h)
-	}
-	for _, r := range rows {
-		for i, cell := range r {
-			if w := visibleLen(cell); w > widths[i] {
-				widths[i] = w
+	keep := make([]bool, len(headers))
+	for i := range headers {
+		keep[i] = i == 0
+		for _, r := range rows {
+			if c := stripANSI(r[i]); c != "" && c != "—" {
+				keep[i] = true
+				break
 			}
 		}
 	}
+	widths := make([]int, len(headers))
+	calc := func() int {
+		total := 1
+		for i, h := range headers {
+			widths[i] = visibleLen(h)
+			for _, r := range rows {
+				if w := visibleLen(r[i]); w > widths[i] {
+					widths[i] = w
+				}
+			}
+			if keep[i] {
+				total += widths[i] + 3
+			}
+		}
+		return total
+	}
+	total := calc()
+	max := termWidth()
+	for j := len(drop) - 1; max > 0 && total > max && j >= 0; j-- {
+		keep[drop[j]] = false
+		total = calc()
+	}
+	// Still too wide: shrink the widest column, one character at a time.
+	for max > 0 && total > max {
+		wi := -1
+		for i := range widths {
+			if keep[i] && i > 0 && (wi < 0 || widths[i] > widths[wi]) {
+				wi = i
+			}
+		}
+		if wi < 0 || widths[wi] <= 6 {
+			break
+		}
+		widths[wi]--
+		total--
+		for _, r := range rows {
+			r[wi] = truncate(r[wi], widths[wi])
+		}
+		headers[wi] = truncate(headers[wi], widths[wi])
+	}
+
 	line := func(l, mid, r string) string {
 		var b strings.Builder
 		b.WriteString(l)
+		first := true
 		for i, w := range widths {
-			b.WriteString(strings.Repeat("─", w+2))
-			if i < len(widths)-1 {
+			if !keep[i] {
+				continue
+			}
+			if !first {
 				b.WriteString(mid)
 			}
+			first = false
+			b.WriteString(strings.Repeat("─", w+2))
 		}
 		b.WriteString(r)
 		return col(cDim, b.String())
@@ -374,6 +471,9 @@ func printTable(headers []string, rows [][]string) {
 		var b strings.Builder
 		b.WriteString(bar)
 		for i, cell := range cells {
+			if !keep[i] {
+				continue
+			}
 			b.WriteString(" " + cell + strings.Repeat(" ", widths[i]-visibleLen(cell)) + " ")
 			b.WriteString(bar)
 		}
