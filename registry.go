@@ -30,6 +30,7 @@ type Registry struct {
 }
 
 type Cycle struct {
+	LTS     bool
 	Cycle   string
 	EOL     string // YYYY-MM-DD, "" = no EOL announced
 	Latest  string
@@ -99,7 +100,7 @@ func (r *Registry) productCycles(product string) []Cycle {
 		var raw []map[string]json.RawMessage
 		if json.Unmarshal(b, &raw) == nil {
 			for _, c := range raw {
-				out = append(out, Cycle{Cycle: rawString(c["cycle"]), EOL: rawDate(c["eol"]), Latest: rawString(c["latest"])})
+				out = append(out, Cycle{Cycle: rawString(c["cycle"]), EOL: rawDate(c["eol"]), Latest: rawString(c["latest"]), LTS: rawLTS(c["lts"])})
 			}
 		}
 	}
@@ -113,6 +114,16 @@ func (r *Registry) productCycles(product string) []Cycle {
 	r.cycles[product] = out
 	r.mu.Unlock()
 	return out
+}
+
+// lts is either a boolean or the date the cycle became LTS.
+func rawLTS(m json.RawMessage) bool {
+	var b bool
+	if json.Unmarshal(m, &b) == nil {
+		return b
+	}
+	var s string
+	return json.Unmarshal(m, &s) == nil && s != ""
 }
 
 func rawString(m json.RawMessage) string {
@@ -167,6 +178,24 @@ func matchCycle(cycles []Cycle, version string) (Cycle, bool) {
 		return *best, true
 	}
 	return Cycle{}, false
+}
+
+// newestLTS returns the newest LTS cycle, if the product has any.
+func newestLTS(cycles []Cycle) (Cycle, bool) {
+	var lts []Cycle
+	for _, c := range cycles {
+		if c.LTS {
+			lts = append(lts, c)
+		}
+	}
+	return newestCycle(lts)
+}
+
+func cycleLatest(c Cycle) string {
+	if c.Latest != "" {
+		return c.Latest
+	}
+	return c.Cycle
 }
 
 func newestCycle(cycles []Cycle) (Cycle, bool) {
@@ -297,9 +326,11 @@ func (r *Registry) enrichOne(c *Component) {
 			c.EOL = cy.EOL
 		}
 		if nc, ok := newestCycle(cycles); ok {
-			c.Latest = nc.Latest
-			if c.Latest == "" {
-				c.Latest = nc.Cycle
+			c.Latest = cycleLatest(nc)
+			// Products with LTS lines (MySQL, Node.js, Symfony...): the LTS is
+			// the production target; the newest release is shown alongside.
+			if lc, ok := newestLTS(cycles); ok && lc.Cycle != nc.Cycle {
+				c.LatestLTS = cycleLatest(lc)
 			}
 		}
 	}
@@ -355,7 +386,11 @@ func status(c *Component) string {
 	if c.Latest == "" || numPart(c.Version) == "" {
 		return "unknown"
 	}
-	cur, lat := splitNums(numPart(c.Version)), splitNums(numPart(c.Latest))
+	target := c.Latest
+	if c.LatestLTS != "" {
+		target = c.LatestLTS
+	}
+	cur, lat := splitNums(numPart(c.Version)), splitNums(numPart(target))
 	if len(cur) == 0 || len(lat) == 0 {
 		return "unknown"
 	}
@@ -365,7 +400,7 @@ func status(c *Component) string {
 	if c.Eco == "runtime" || c.Declared {
 		return "ok" // a runtime cycle or a constraint: only majors matter
 	}
-	if cmpVersion(c.Latest, c.Version) > 0 {
+	if cmpVersion(target, c.Version) > 0 {
 		return "minor"
 	}
 	return "ok"

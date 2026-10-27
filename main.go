@@ -312,6 +312,9 @@ func latestText(c Component) string {
 	if c.Latest == "" {
 		return col(cDim, "—")
 	}
+	if c.LatestLTS != "" {
+		return c.LatestLTS + " LTS " + col(cDim, "("+c.Latest+")")
+	}
 	return c.Latest
 }
 
