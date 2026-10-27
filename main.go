@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -54,7 +55,14 @@ func main() {
 	}
 	flag.Parse()
 	if *showVersion {
-		fmt.Println("stackscan", version)
+		v := version
+		if v == "dev" {
+			// go install github.com/wecoprod/stackscan@v0.1.0 records the module version.
+			if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+				v = bi.Main.Version
+			}
+		}
+		fmt.Println("stackscan", v)
 		return
 	}
 
