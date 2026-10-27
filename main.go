@@ -240,87 +240,75 @@ func render(pr *Project, reg *Registry, all, verbose bool) {
 		}
 	}
 
-	// ---- packages per ecosystem ----
+	// ---- packages: one table per ecosystem and folder ----
+	// A project can hold several independent parts (app/, a WordPress plugin,
+	// a front-end...): each folder with its own manifest gets its own table.
 	ecoTitles := []struct{ eco, title string }{{"composer", "Composer packages"}, {"npm", "npm packages"}, {"go", "Go modules"}}
 	for _, e := range ecoTitles {
-		// One line per package: the same package can come from several
-		// manifests (monorepo, plugins...) with different versions.
-		type pkgLine struct {
-			c        Component
-			versions []string
-			sources  []string
-		}
-		agg := map[string]*pkgLine{}
-		var order []string
+		byDir := map[string][]Component{}
 		for _, c := range pr.Components {
 			if c.Eco != e.eco || (!all && !c.Direct) {
 				continue
 			}
-			l, ok := agg[c.Name]
-			if !ok {
-				l = &pkgLine{c: c}
-				agg[c.Name] = l
-				order = append(order, c.Name)
-			} else if severity[c.Status] < severity[l.c.Status] {
-				st, ver := c, l.c.Version
-				l.c = st
-				l.c.Version = ver
-			}
-			l.c.Dev = l.c.Dev && c.Dev
-			l.versions = append(l.versions, c.Version)
-			l.sources = append(l.sources, c.Source)
+			file, _, _ := strings.Cut(c.Source, " (")
+			d := filepath.Dir(file)
+			byDir[d] = append(byDir[d], c)
 		}
-		var list []Component
-		hidden := 0
-		total := len(order)
-		origin := map[string]string{}
-		for _, n := range order {
-			l := agg[n]
-			vs := uniq(l.versions)
-			sort.Slice(vs, func(i, j int) bool { return cmpVersion(vs[i], vs[j]) < 0 })
-			l.c.Version = strings.Join(vs, ", ")
-			if dirs := uniqDirs(l.sources); len(dirs) > 1 {
-				origin[n] = strings.Join(dirs, ", ")
-			}
-			counts[l.c.Status]++
-			if !verbose && (l.c.Status == "ok" || l.c.Status == "unknown") && l.c.Product == "" {
-				hidden++
-				continue
-			}
-			list = append(list, l.c)
+		dirs := make([]string, 0, len(byDir))
+		for d := range byDir {
+			dirs = append(dirs, d)
 		}
-		if total == 0 {
-			continue
-		}
-		scope := "direct"
-		if all {
-			scope = "all"
-		}
-		section(fmt.Sprintf("%s (%d %s)", e.title, total, scope))
-		sort.Slice(list, func(i, j int) bool {
-			if severity[list[i].Status] != severity[list[j].Status] {
-				return severity[list[i].Status] < severity[list[j].Status]
+		sort.Strings(dirs)
+		for _, d := range dirs {
+			comps := byDir[d]
+			var list []Component
+			hidden := 0
+			seen := map[string]bool{}
+			total := 0
+			for _, c := range comps {
+				if seen[c.Name] {
+					continue
+				}
+				seen[c.Name] = true
+				total++
+				counts[c.Status]++
+				if !verbose && (c.Status == "ok" || c.Status == "unknown") && c.Product == "" {
+					hidden++
+					continue
+				}
+				list = append(list, c)
 			}
-			return list[i].Name < list[j].Name
-		})
-		var rows [][]string
-		for _, c := range list {
-			name := c.Name
-			if c.Dev {
-				name += col(cDim, " (dev)")
+			scope := "direct"
+			if all {
+				scope = "all"
 			}
-			if o := origin[c.Name]; o != "" {
-				name += col(cDim, " · "+o)
+			title := fmt.Sprintf("%s (%d %s)", e.title, total, scope)
+			if len(dirs) > 1 || d != "." {
+				title = fmt.Sprintf("%s — %s (%d %s)", e.title, d, total, scope)
 			}
-			ver := c.Version
-			if c.Declared {
-				ver += col(cDim, " (declared)")
+			section(title)
+			sort.Slice(list, func(i, j int) bool {
+				if severity[list[i].Status] != severity[list[j].Status] {
+					return severity[list[i].Status] < severity[list[j].Status]
+				}
+				return list[i].Name < list[j].Name
+			})
+			var rows [][]string
+			for _, c := range list {
+				name := c.Name
+				if c.Dev {
+					name += col(cDim, " (dev)")
+				}
+				ver := c.Version
+				if c.Declared {
+					ver += col(cDim, " (declared)")
+				}
+				rows = append(rows, []string{icon(c.Status), name, ver, latestText(c), eolText(c), statusText(c)})
 			}
-			rows = append(rows, []string{icon(c.Status), name, ver, latestText(c), eolText(c), statusText(c)})
-		}
-		printTable([]string{"", "Package", "Installed", "Latest", "End of life", "Status"}, rows, 4)
-		if hidden > 0 {
-			fmt.Println(col(cDim, fmt.Sprintf("+ %d up to date (-v to list them)", hidden)))
+			printTable([]string{"", "Package", "Installed", "Latest", "End of life", "Status"}, rows, 4)
+			if hidden > 0 {
+				fmt.Println(col(cDim, fmt.Sprintf("+ %d up to date (-v to list them)", hidden)))
+			}
 		}
 	}
 
@@ -380,18 +368,6 @@ func shortSources(sources []string) string {
 		out = append(out, label)
 	}
 	return strings.Join(uniq(out), ", ")
-}
-
-// uniqDirs returns the folders the manifests live in ("." for the root).
-func uniqDirs(sources []string) []string {
-	var out []string
-	for _, s := range sources {
-		file, _, _ := strings.Cut(s, " (")
-		out = append(out, filepath.Dir(file))
-	}
-	out = uniq(out)
-	sort.Strings(out)
-	return out
 }
 
 func section(t string) {
