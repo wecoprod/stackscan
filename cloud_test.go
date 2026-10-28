@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/ecdh"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
@@ -18,13 +17,16 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/nacl/box"
 )
 
 // fakeCloud implements the server side of docs/api.md, checks included, so
 // the CLI is tested against the contract rather than against itself.
 type fakeCloud struct {
 	t      *testing.T
-	sk     *ecdh.PrivateKey
+	pub    *[32]byte
+	priv   *[32]byte
 	keyID  string
 	mu     sync.Mutex
 	keys   map[string]ed25519.PublicKey
@@ -58,8 +60,8 @@ func (f *fakeCloud) serve(w http.ResponseWriter, r *http.Request) {
 
 	switch r.URL.Path {
 	case "/api/v1/enroll":
-		inner, err := hpkeOpen(f.sk, []byte(infoEnroll), []byte("enroll\n"+env.ServerKey), sealed)
-		if err != nil {
+		inner, ok := box.OpenAnonymous(nil, sealed, f.pub, f.priv)
+		if !ok {
 			reply(400, `{"error":"bad_request"}`)
 			return
 		}
@@ -77,18 +79,23 @@ func (f *fakeCloud) serve(w http.ResponseWriter, r *http.Request) {
 		reply(201, `{"key_id":"c91e5b7a-0d8f-4c1e-9a3b-6f2d1e8a7b40","project":"TousQuali","environment":"prod"}`)
 
 	case "/api/v1/reports":
-		inner, err := hpkeOpen(f.sk, []byte(infoReport), []byte(env.KeyID+"\n"+env.ServerKey), sealed)
-		if err != nil {
+		inner, ok := box.OpenAnonymous(nil, sealed, f.pub, f.priv)
+		if !ok {
 			reply(400, `{"error":"bad_request"}`)
 			return
 		}
 		var m struct {
+			KeyID   string `json:"key_id"`
 			Payload string `json:"payload"`
 			TS      int64  `json:"ts"`
 			Nonce   string `json:"nonce"`
 			Sig     string `json:"sig"`
 		}
 		json.Unmarshal(inner, &m)
+		if m.KeyID != env.KeyID {
+			reply(400, `{"error":"bad_request"}`)
+			return
+		}
 		pub, ok := f.keys[env.KeyID]
 		payload, _ := base64.StdEncoding.DecodeString(m.Payload)
 		sig, _ := base64.StdEncoding.DecodeString(m.Sig)
@@ -115,8 +122,8 @@ func (f *fakeCloud) serve(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestLinkAndPushAgainstContract(t *testing.T) {
-	sk, _ := ecdh.X25519().GenerateKey(rand.Reader)
-	f := &fakeCloud{t: t, sk: sk, keyID: "2026-10", keys: map[string]ed25519.PublicKey{}, nonces: map[string]bool{}}
+	spub, spriv, _ := box.GenerateKey(rand.Reader)
+	f := &fakeCloud{t: t, pub: spub, priv: spriv, keyID: "2026-10", keys: map[string]ed25519.PublicKey{}, nonces: map[string]bool{}}
 	srv := httptest.NewServer(http.HandlerFunc(f.serve))
 	defer srv.Close()
 
@@ -124,7 +131,7 @@ func TestLinkAndPushAgainstContract(t *testing.T) {
 	os.WriteFile(filepath.Join(proj, "compose.yaml"), []byte("services:\n  db:\n    image: postgres:14-alpine\n"), 0o644)
 	os.WriteFile(filepath.Join(proj, "composer.json"), []byte(`{"require":{"php":">=8.2","symfony/framework-bundle":"7.4.*"}}`), 0o644)
 	t.Setenv("STACKSCAN_URL", srv.URL)
-	t.Setenv("STACKSCAN_SERVER_KEY", "2026-10:"+base64.StdEncoding.EncodeToString(sk.PublicKey().Bytes()))
+	t.Setenv("STACKSCAN_SERVER_KEY", "2026-10:"+base64.StdEncoding.EncodeToString(spub[:]))
 	t.Setenv("STACKSCAN_CONFIG_DIR", t.TempDir())
 	t.Setenv("STACKSCAN_KEY", "")
 
@@ -166,7 +173,7 @@ func TestLinkAndPushAgainstContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload, _ := json.Marshal(rep)
-	body, _ := sealReport(key, "2026-10", sk.PublicKey().Bytes(), payload, time.Now())
+	body, _ := sealReport(key, "2026-10", spub[:], payload, time.Now())
 	if s, _, _ := postJSON(srv.URL+"/api/v1/reports", body); s != 202 {
 		t.Fatalf("fresh push: got %d", s)
 	}
@@ -174,11 +181,11 @@ func TestLinkAndPushAgainstContract(t *testing.T) {
 		t.Fatalf("replay: got %d, want 401", s)
 	}
 	// An old timestamp must be refused.
-	old, _ := sealReport(key, "2026-10", sk.PublicKey().Bytes(), payload, time.Now().Add(-10*time.Minute))
+	old, _ := sealReport(key, "2026-10", spub[:], payload, time.Now().Add(-10*time.Minute))
 	if s, _, _ := postJSON(srv.URL+"/api/v1/reports", old); s != 401 {
 		t.Fatalf("stale timestamp: got %d, want 401", s)
 	}
-	// A key_id swapped in clear text breaks decryption (it is bound as AAD).
+	// A key_id swapped in clear text no longer matches the signed one inside.
 	var envl map[string]any
 	json.Unmarshal(body, &envl)
 	envl["key_id"] = "someone-else"

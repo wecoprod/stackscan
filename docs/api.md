@@ -49,29 +49,18 @@ and can be revoked at any time from the web interface.
 - `ts` is a Unix timestamp in seconds.
 - `nonce` is 16 random bytes.
 
-### Encryption: HPKE (RFC 9180)
+### Encryption: libsodium sealed box
 
-`sealed` is a single-shot HPKE message, base mode, with the suite
-**DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-256-GCM** (KEM 0x0020, KDF
-0x0001, AEAD 0x0002):
+`sealed` is a libsodium **sealed box** (`crypto_box_seal`: ephemeral X25519
+key, XSalsa20-Poly1305) for the server public key named by `server_key`.
 
-```
-sealed = enc (32 bytes) || AES-256-GCM ciphertext and tag
-```
+- CLI: `golang.org/x/crypto/nacl/box.SealAnonymous`.
+- Server: Symfony 8.2 `SealedBoxKms` (`symfony/key-management`), with
+  `server_key` as the key id: `$kms->decrypt(new Ciphertext($sealed, $serverKey))`;
+  or plain `sodium_crypto_box_seal_open`.
 
-| Request | `info` | `aad` |
-| --- | --- | --- |
-| enroll | `stackscan-enroll-v1` | `"enroll\n" + server_key` |
-| reports | `stackscan-report-v1` | `key_id + "\n" + server_key` |
-
-The clear-text envelope fields are bound as `aad`: changing `key_id` or
-`server_key` in transit makes decryption fail.
-
-HPKE is an IETF standard built only from primitives found in common standard
-libraries (X25519, HKDF, AES-GCM). The CLI's implementation
-([hpke.go](../hpke.go)) is checked against the official RFC 9180 test vectors.
-On the server: `sodium_crypto_scalarmult` (X25519), `hash_hmac` (HKDF) and
-`openssl_decrypt` (AES-256-GCM) in PHP, or any RFC 9180 library.
+A sealed box has no associated data, so the clear-text `key_id` of a report is
+repeated inside the encrypted content and the server checks that both match.
 
 ## 1. Enroll an environment — `POST /api/v1/enroll`
 
@@ -85,7 +74,7 @@ Request:
 {
   "v": 1,
   "server_key": "2026-10",
-  "sealed": "<base64 HPKE message>"
+  "sealed": "<base64 sealed box>"
 }
 ```
 
@@ -122,7 +111,7 @@ Request (the only clear-text field is an opaque key identifier):
   "v": 1,
   "key_id": "c91e5b7a-0d8f-4c1e-9a3b-6f2d1e8a7b40",
   "server_key": "2026-10",
-  "sealed": "<base64 HPKE message>"
+  "sealed": "<base64 sealed box>"
 }
 ```
 
@@ -130,6 +119,7 @@ Plaintext inside `sealed`:
 
 ```json
 {
+  "key_id": "c91e5b7a-0d8f-4c1e-9a3b-6f2d1e8a7b40",
   "payload": "<base64 of the report JSON bytes>",
   "ts": 1793270400,
   "nonce": "<base64, 16 bytes>",
@@ -152,7 +142,8 @@ sig     = Ed25519_sign(environment private key, message)
 ### Server checks, in order
 
 1. `v` and `server_key` are known; body ≤ 4 MiB.
-2. `sealed` opens with the server private key (HPKE, with the `info` and `aad` above).
+2. `sealed` opens with the server key pair named by `server_key`, and the
+   `key_id` inside matches the clear-text `key_id`.
 3. `key_id` exists and is not revoked.
 4. `sig` is valid for `message` with that key's public key.
 5. `|now − ts| ≤ 300` seconds.

@@ -2,13 +2,13 @@ package main
 
 // stackscan link / push: send an inventory to stackscan cloud.
 // The wire format is described in docs/api.md. In short: the report is
-// signed with the environment's Ed25519 key, then encrypted with HPKE for the
-// public key of stackscan cloud, built into this binary. Nothing is sent
-// unless one of these two commands is run.
+// signed with the environment's Ed25519 key, then encrypted as a libsodium
+// sealed box (crypto_box_seal) for the public key of stackscan cloud, built
+// into this binary; the server opens it with Symfony's SealedBoxKms.
+// Nothing is sent unless one of these two commands is run.
 
 import (
 	"bytes"
-	"crypto/ecdh"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
@@ -28,6 +28,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/nacl/box"
 )
 
 const defaultCloudURL = "https://stackscan.wecoprod.com"
@@ -40,11 +42,6 @@ const defaultCloudURL = "https://stackscan.wecoprod.com"
 var (
 	serverKeyID  = ""
 	serverKeyPub = ""
-)
-
-const (
-	infoEnroll = "stackscan-enroll-v1"
-	infoReport = "stackscan-report-v1"
 )
 
 var httpCloud = &http.Client{Timeout: 30 * time.Second}
@@ -80,11 +77,8 @@ func serverKey() (id string, pub []byte, err error) {
 		return "", nil, errors.New("this build has no stackscan cloud key; set STACKSCAN_SERVER_KEY")
 	}
 	pub, err = base64.StdEncoding.DecodeString(b64)
-	if err == nil {
-		_, err = ecdh.X25519().NewPublicKey(pub)
-	}
-	if err != nil {
-		return "", nil, fmt.Errorf("invalid server key: %v", err)
+	if err != nil || len(pub) != 32 {
+		return "", nil, fmt.Errorf("invalid server key: expected 32 bytes of base64")
 	}
 	return id, pub, nil
 }
@@ -194,7 +188,7 @@ func linkMain(args []string) {
 		"nonce":       base64.StdEncoding.EncodeToString(nonce),
 		"cli_version": cliVersion(),
 	})
-	sealed, err := hpkeSeal(skPub, []byte(infoEnroll), []byte("enroll\n"+skID), inner)
+	sealed, err := seal(skPub, inner)
 	check(err)
 	body, _ := json.Marshal(map[string]any{"v": 1, "server_key": skID, "sealed": base64.StdEncoding.EncodeToString(sealed)})
 
@@ -314,12 +308,13 @@ func sealReport(key signingKey, skID string, skPub, payload []byte, now time.Tim
 	sum := sha256.Sum256(payload)
 	msg := "stackscan-report-v1\n" + ts + "\n" + nonceB64 + "\n" + hex.EncodeToString(sum[:])
 	inner, _ := json.Marshal(map[string]any{
+		"key_id":  key.ID, // must match the clear-text key_id (no AAD in a sealed box)
 		"payload": base64.StdEncoding.EncodeToString(payload),
 		"ts":      now.Unix(),
 		"nonce":   nonceB64,
 		"sig":     base64.StdEncoding.EncodeToString(ed25519.Sign(key.Priv, []byte(msg))),
 	})
-	sealed, err := hpkeSeal(skPub, []byte(infoReport), []byte(key.ID+"\n"+skID), inner)
+	sealed, err := seal(skPub, inner)
 	if err != nil {
 		return nil, err
 	}
@@ -410,6 +405,14 @@ func resolveKey(root, env string) (signingKey, error) {
 		return signingKey{}, fmt.Errorf("no key for this environment on this machine (%s): link it here, or set STACKSCAN_KEY", p)
 	}
 	return parseToken(string(b))
+}
+
+// seal is libsodium's crypto_box_seal: X25519 + XSalsa20-Poly1305 with an
+// ephemeral key. PHP: sodium_crypto_box_seal_open, or Symfony's SealedBoxKms.
+func seal(serverPub, msg []byte) ([]byte, error) {
+	var pk [32]byte
+	copy(pk[:], serverPub)
+	return box.SealAnonymous(nil, msg, &pk, rand.Reader)
 }
 
 // ---------- HTTP ----------
