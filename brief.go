@@ -8,39 +8,9 @@ import (
 )
 
 // renderBrief prints a short lifecycle report: only what has reached, or
-// is about to reach, its end of life. It is what the git hooks show.
+// is about to reach, its end of life. It is what the git hook shows.
 // It returns the number of end-of-life lines printed.
 func renderBrief(pr *Project) int {
-	return renderBriefOnly(pr, nil)
-}
-
-// briefKey identifies a line of the brief report, status included: a version
-// going from "near end of life" to "end of life" counts as news.
-func briefKey(c Component) string {
-	return c.Eco + "|" + c.Name + "|" + c.Version + "|" + c.Status
-}
-
-// briefKeys lists what the brief report would show.
-func briefKeys(pr *Project) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, c := range pr.Components {
-		if c.Eco == "image" || (c.Status != "eol" && c.Status != "eol-soon") {
-			continue
-		}
-		k := briefKey(c)
-		if !seen[k] {
-			seen[k] = true
-			out = append(out, k)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// renderBriefOnly prints the brief report, restricted to the given keys
-// when only is not nil (and then without the summary lines).
-func renderBriefOnly(pr *Project, only map[string]bool) int {
 	type line struct {
 		c       Component
 		sources []string
@@ -56,9 +26,6 @@ func renderBriefOnly(pr *Project, only map[string]bool) int {
 			majors++
 		}
 		if c.Status != "eol" && c.Status != "eol-soon" {
-			continue
-		}
-		if only != nil && !only[briefKey(c)] {
 			continue
 		}
 		k := c.Eco + "|" + c.Name + "|" + c.Version
@@ -102,9 +69,6 @@ func renderBriefOnly(pr *Project, only map[string]bool) int {
 		}
 		fmt.Printf("  %s %s %s — %s%s  %s\n", icon(c.Status), col(cBold, c.Name), c.Version, when, extra,
 			col(cDim, shortSources(uniq(l.sources))))
-	}
-	if only != nil {
-		return len(keys)
 	}
 	if len(keys) == 0 {
 		fmt.Println(col(cGreen, "  ✓ nothing at or near end of life"))

@@ -15,15 +15,14 @@ import (
 // Component is one versioned thing found in a project: a composer/npm/go
 // package, a Docker image, or a runtime (php, nodejs, postgresql...).
 type Component struct {
-	Eco       string `json:"eco"`     // composer | npm | go | image | runtime
-	Name      string `json:"name"`    // package name, image repo, or endoflife product
-	Version   string `json:"version"` // as found (installed version, tag, constraint)
-	Direct    bool   `json:"direct"`  // declared directly by the project
-	Dev       bool   `json:"dev"`
-	Source    string `json:"source"`   // file, relative to the project
-	Floating  bool   `json:"floating"` // tag/constraint that moves without a commit
-	Declared  bool   `json:"declared"` // constraint only (no lock file)
-	FromImage bool   `json:"-"`        // runtime deduced from a Docker image tag
+	Eco      string `json:"eco"`     // composer | npm | go | image | runtime
+	Name     string `json:"name"`    // package name, image repo, or endoflife product
+	Version  string `json:"version"` // as found (installed version, tag, constraint)
+	Direct   bool   `json:"direct"`  // declared directly by the project
+	Dev      bool   `json:"dev"`
+	Source   string `json:"source"`   // file, relative to the project
+	Floating bool   `json:"floating"` // tag/constraint that moves without a commit
+	Declared bool   `json:"declared"` // constraint only (no lock file)
 
 	// Filled by the enrich step.
 	Latest    string `json:"latest,omitempty"`
@@ -469,7 +468,7 @@ func addImage(ref, src string, add func(Component)) {
 	if v == "" {
 		v = "latest"
 	}
-	add(Component{Eco: "runtime", Name: product, Version: v, Direct: true, Source: src + " (" + repo + ")", Floating: v == "latest" || !hasPatch(v), FromImage: true})
+	add(Component{Eco: "runtime", Name: product, Version: v, Direct: true, Source: src + " (" + repo + ")", Floating: v == "latest" || !hasPatch(v)})
 }
 
 func hasPatch(v string) bool {

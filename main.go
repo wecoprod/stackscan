@@ -59,7 +59,7 @@ func main() {
 	brief := flag.Bool("brief", false, "short report: only what is at or near end of life (fast)")
 	depth := flag.Int("depth", 4, "maximum directory depth to search for manifests")
 	flag.Usage = func() {
-		fmt.Fprint(os.Stderr, "Usage: stackscan [options] [dir]\n       stackscan hook install|uninstall [--strict] [--all dir]\n\nScans a project (current directory by default) and compares its versions\nwith the latest releases and end-of-life dates.\n\nOptions:\n")
+		fmt.Fprint(os.Stderr, "Usage: stackscan [options] [dir]\n       stackscan hook install|uninstall\n\nScans a project (current directory by default) and compares its versions\nwith the latest releases and end-of-life dates.\n\nOptions:\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()

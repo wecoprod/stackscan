@@ -120,43 +120,21 @@ containers separately.
 
 ## Git hook
 
-See what a commit changes in your dependencies, right when you commit:
-
 ```
 cd my-project && stackscan hook install
-stackscan hook install --all ~/Development     # every repository under a folder
 ```
 
-Every `git commit` checks the project, but the hook only speaks when there is
-something new:
-
-- **the commit touches a manifest** (`composer.lock`, `package.json`,
-  Dockerfile, compose files…): what moved, and what is at or near end of life;
-- **a version reached or neared its end of life** since the last check, even
-  without any file change (PostgreSQL 14 on 12 November, say): just that line;
-- **otherwise**, at most one reminder line a day, or nothing at all.
+Adds a `pre-commit` hook that runs `stackscan -brief` on every commit: a short
+list of what is at or near end of life. It never blocks the commit, keeps any
+existing pre-commit hook, and does nothing if `stackscan` is not found.
+`stackscan hook uninstall` removes it.
 
 ```
-stackscan · app/composer.lock, compose.yaml changed
-    symfony/framework-bundle v7.0.4 → v7.4.16
-    image postgres 17-alpine ↓ 12-alpine
-  + 2 indirect dependency change(s)
-  ✗ postgresql 12 — end of life since 2024-11-21 · latest 18  compose.yaml
+$ git commit -m "..."
+my-project
+  ✗ nodejs 18 — end of life since 2025-04-30 · latest 24.11.0 · LTS 24.11.0  Dockerfile
+  ! postgresql 14 — end of life on 2026-11-12 (in 15 days) · latest 18  compose.yaml
 ```
-
-- The hook **never blocks the commit** and does nothing if `stackscan` is not
-  found.
-- `--strict` refuses a commit that *brings in* an end-of-life version
-  (versions already there do not block). Bypass with `git commit --no-verify`.
-- `--pull` also reports after `git pull`, a branch switch or a rebase, with a
-  reminder to run `composer install` / `npm install`.
-- Existing hooks are kept: stackscan adds a marked block and
-  `stackscan hook uninstall` removes only that block.
-- With `core.hooksPath` (Husky, CaptainHook…), stackscan prints the line to
-  add to your own pre-commit hook instead of touching it.
-- `STACKSCAN_SKIP=1` silences the hook for one command.
-
-The same short report is available on demand with `stackscan -brief`.
 
 ## Use in CI
 
