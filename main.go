@@ -45,9 +45,15 @@ func col(code, s string) string {
 }
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "hook" {
-		hookMain(os.Args[2:])
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "hook":
+			hookMain(os.Args[2:])
+			return
+		case "evaluate":
+			evaluateMain(os.Args[2:])
+			return
+		}
 	}
 	all := flag.Bool("all", false, "include indirect (transitive) dependencies")
 	verbose := flag.Bool("v", false, "also list up-to-date packages")

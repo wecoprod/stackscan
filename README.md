@@ -148,6 +148,16 @@ my-project
   ! postgresql 14 — end of life on 2026-11-12 (in 15 days) · latest 18  compose.yaml
 ```
 
+## Evaluate a list of versions
+
+```
+echo '[{"eco":"runtime","name":"postgresql","version":"14"}]' | stackscan evaluate
+```
+
+Reads a JSON array of `{"eco","name","version"}` and returns the same items
+with `latest`, `latest_lts`, `eol` and `status`, computed exactly like a scan.
+stackscan cloud uses it to evaluate every distinct version once a day.
+
 ## Use in CI
 
 ```yaml
