@@ -118,39 +118,38 @@ A `*` after a version marks a **floating** reference: it can change without a co
 necessarily what runs in production — check managed databases and running
 containers separately.
 
-## Git hooks
+## Git hook
 
-Get notified when dependencies change, right in your git workflow:
+See what a commit changes in your dependencies, right when you commit:
 
 ```
 cd my-project && stackscan hook install
 stackscan hook install --all ~/Development     # every repository under a folder
 ```
 
-After `git pull`, a branch switch or a rebase, and before `git commit`, the
-hooks look at the manifests that changed (`composer.lock`, `package.json`,
-Dockerfile, compose files…). When nothing relevant changed, they stay silent.
-Otherwise they print what moved and what is at or near end of life:
+On `git commit`, when the commit touches a manifest (`composer.lock`,
+`package.json`, Dockerfile, compose files…), stackscan prints what moved and
+what is at or near end of life. When it does not, it stays silent.
 
 ```
 stackscan · app/composer.lock, compose.yaml changed
     symfony/framework-bundle v7.0.4 → v7.4.16
     image postgres 17-alpine ↓ 12-alpine
   + 2 indirect dependency change(s)
-  → cd app && composer install
-  → docker compose up -d --build
   ✗ postgresql 12 — end of life since 2024-11-21 · latest 18  compose.yaml
 ```
 
-- The hooks **never block git** and do nothing if `stackscan` is not found.
-- `--strict` makes `pre-commit` refuse a commit that *brings in* an
-  end-of-life version (versions already there do not block). Bypass with
-  `git commit --no-verify`.
+- The hook **never blocks the commit** and does nothing if `stackscan` is not
+  found.
+- `--strict` refuses a commit that *brings in* an end-of-life version
+  (versions already there do not block). Bypass with `git commit --no-verify`.
+- `--pull` also reports after `git pull`, a branch switch or a rebase, with a
+  reminder to run `composer install` / `npm install`.
 - Existing hooks are kept: stackscan adds a marked block and
   `stackscan hook uninstall` removes only that block.
 - With `core.hooksPath` (Husky, CaptainHook…), stackscan prints the line to
-  add to your own hooks instead of touching them.
-- `STACKSCAN_SKIP=1` silences the hooks for one command.
+  add to your own pre-commit hook instead of touching it.
+- `STACKSCAN_SKIP=1` silences the hook for one command.
 
 The same short report is available on demand with `stackscan -brief`.
 

@@ -24,7 +24,10 @@ const (
 	markEnd   = "# <<< stackscan <<<"
 )
 
+// Installed by default: pre-commit only. --pull adds the hooks that run after
+// git pull, checkout and rebase. Uninstall removes all of them.
 var hookNames = []string{"post-merge", "post-checkout", "post-rewrite", "pre-commit"}
+var pullHooks = []string{"post-merge", "post-checkout", "post-rewrite"}
 
 func hookMain(args []string) {
 	if st, err := os.Stdout.Stat(); err != nil || st.Mode()&os.ModeCharDevice == 0 || os.Getenv("NO_COLOR") != "" {
@@ -38,11 +41,12 @@ func hookMain(args []string) {
 	case "install":
 		fs := flag.NewFlagSet("hook install", flag.ExitOnError)
 		strict := fs.Bool("strict", false, "pre-commit refuses a commit that brings in an end-of-life version")
+		pull := fs.Bool("pull", false, "also report after git pull, checkout and rebase")
 		all := fs.String("all", "", "install in every git repository found under this directory")
 		fs.Parse(args[1:])
 		repos := targetRepos(*all, fs.Args())
 		for _, r := range repos {
-			installHooks(r, *strict)
+			installHooks(r, *strict, *pull)
 		}
 	case "uninstall":
 		fs := flag.NewFlagSet("hook uninstall", flag.ExitOnError)
@@ -65,15 +69,16 @@ func hookMain(args []string) {
 
 func hookUsage() {
 	fmt.Fprint(os.Stderr, `Usage:
-  stackscan hook install [--strict] [repo]     install the git hooks (current repository by default)
-  stackscan hook install --all ~/Development   install in every repository under a folder
-  stackscan hook uninstall [--all dir] [repo]  remove them
+  stackscan hook install [--strict] [--pull] [repo]   install the pre-commit hook (current repository by default)
+  stackscan hook install --all ~/Development          install in every repository under a folder
+  stackscan hook uninstall [--all dir] [repo]         remove the hooks
 
-The hooks run after git pull / checkout / rebase and before git commit, only
-when a manifest changed (composer.lock, package.json, Dockerfile, compose...).
-They never block anything, unless installed with --strict: pre-commit then
-refuses a commit that brings in an end-of-life version.
-Set STACKSCAN_SKIP=1 to silence them for one command.
+On git commit, when a manifest is part of the commit (composer.lock,
+package.json, Dockerfile, compose...), stackscan lists the version changes and
+what is at or near end of life. It never blocks the commit, unless installed
+with --strict: it then refuses a commit that brings in an end-of-life version.
+--pull also reports after git pull, checkout and rebase.
+Set STACKSCAN_SKIP=1 to silence the hooks for one command.
 `)
 }
 
@@ -116,7 +121,7 @@ func gitOut(dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-func installHooks(repo string, strict bool) {
+func installHooks(repo string, strict, pull bool) {
 	top, err := gitOut(repo, "rev-parse", "--show-toplevel")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, repo+": not a git repository")
@@ -124,8 +129,8 @@ func installHooks(repo string, strict bool) {
 	}
 	if hp, _ := gitOut(top, "config", "core.hooksPath"); hp != "" {
 		fmt.Printf("%s: hooks are managed elsewhere (core.hooksPath = %s).\n", top, hp)
-		fmt.Println("  Add this line to your post-merge, post-checkout and pre-commit hooks:")
-		fmt.Println(`    command -v stackscan >/dev/null && stackscan hook run <hook-name> "$@" || true`)
+		fmt.Println("  Add this line to your pre-commit hook:")
+		fmt.Println(`    command -v stackscan >/dev/null && stackscan hook run pre-commit "$@" || true`)
 		return
 	}
 	dir, err := gitOut(top, "rev-parse", "--git-path", "hooks")
@@ -139,8 +144,12 @@ func installHooks(repo string, strict bool) {
 	os.MkdirAll(dir, 0o755)
 
 	self, _ := os.Executable()
+	names := []string{"pre-commit"}
+	if pull {
+		names = append(pullHooks, names...)
+	}
 	var done, skipped []string
-	for _, h := range hookNames {
+	for _, h := range names {
 		block := hookBlock(h, self, strict)
 		if err := writeHook(filepath.Join(dir, h), block); err != nil {
 			skipped = append(skipped, h+" ("+err.Error()+")")
