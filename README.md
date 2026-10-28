@@ -82,8 +82,10 @@ name (`php`, `symfony/framework-bundle`), the same way `composer outdated` or
 `npm outdated` do. Your versions, file paths and project names are never sent
 anywhere. `-offline` turns off even those lookups.
 
-The upcoming stackscan cloud (fleet view, alerts) only receives data when you
-run `stackscan push`, end-to-end encrypted. The exact contract is public:
+stackscan cloud (fleet view across projects and environments, alerts) only
+receives data when you run `stackscan link` then `stackscan push`: signed with
+a key that never leaves the machine, and end-to-end encrypted with HPKE
+(RFC 9180). `stackscan push --dry-run` prints exactly what would be sent. The exact contract is public:
 [docs/api.md](docs/api.md) and [docs/report.schema.json](docs/report.schema.json).
 
 ## Options

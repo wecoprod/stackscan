@@ -4,7 +4,11 @@ builds:
   - env: [CGO_ENABLED=0]
     goos: [darwin, linux, windows]
     goarch: [amd64, arm64]
-    ldflags: ["-s -w -X main.version={{.Version}}"]
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+      # Public key of stackscan cloud (not a secret): repository variables.
+      - -X main.serverKeyID={{ envOrDefault "STACKSCAN_SERVER_KEY_ID" "" }}
+      - -X main.serverKeyPub={{ envOrDefault "STACKSCAN_SERVER_KEY_PUB" "" }}
 archives:
   - formats: [tar.gz]
     format_overrides:

@@ -44,13 +44,34 @@ and can be revoked at any time from the web interface.
 
 ## Encoding
 
-- Binary values (keys, nonces, signatures, sealed boxes) are standard base64
-  with padding (RFC 4648 §4).
+- Binary values (keys, nonces, signatures, sealed messages) are standard
+  base64 with padding (RFC 4648 §4).
 - `ts` is a Unix timestamp in seconds.
 - `nonce` is 16 random bytes.
-- **Sealed box** = libsodium `crypto_box_seal` (X25519, XSalsa20-Poly1305).
-  Go: `golang.org/x/crypto/nacl/box.SealAnonymous`; PHP:
-  `sodium_crypto_box_seal_open`.
+
+### Encryption: HPKE (RFC 9180)
+
+`sealed` is a single-shot HPKE message, base mode, with the suite
+**DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, AES-256-GCM** (KEM 0x0020, KDF
+0x0001, AEAD 0x0002):
+
+```
+sealed = enc (32 bytes) || AES-256-GCM ciphertext and tag
+```
+
+| Request | `info` | `aad` |
+| --- | --- | --- |
+| enroll | `stackscan-enroll-v1` | `"enroll\n" + server_key` |
+| reports | `stackscan-report-v1` | `key_id + "\n" + server_key` |
+
+The clear-text envelope fields are bound as `aad`: changing `key_id` or
+`server_key` in transit makes decryption fail.
+
+HPKE is an IETF standard built only from primitives found in common standard
+libraries (X25519, HKDF, AES-GCM). The CLI's implementation
+([hpke.go](../hpke.go)) is checked against the official RFC 9180 test vectors.
+On the server: `sodium_crypto_scalarmult` (X25519), `hash_hmac` (HKDF) and
+`openssl_decrypt` (AES-256-GCM) in PHP, or any RFC 9180 library.
 
 ## 1. Enroll an environment — `POST /api/v1/enroll`
 
@@ -64,7 +85,7 @@ Request:
 {
   "v": 1,
   "server_key": "2026-10",
-  "sealed": "<base64 sealed box>"
+  "sealed": "<base64 HPKE message>"
 }
 ```
 
@@ -101,7 +122,7 @@ Request (the only clear-text field is an opaque key identifier):
   "v": 1,
   "key_id": "c91e5b7a-0d8f-4c1e-9a3b-6f2d1e8a7b40",
   "server_key": "2026-10",
-  "sealed": "<base64 sealed box>"
+  "sealed": "<base64 HPKE message>"
 }
 ```
 
@@ -131,7 +152,7 @@ sig     = Ed25519_sign(environment private key, message)
 ### Server checks, in order
 
 1. `v` and `server_key` are known; body ≤ 4 MiB.
-2. The sealed box opens with the server private key.
+2. `sealed` opens with the server private key (HPKE, with the `info` and `aad` above).
 3. `key_id` exists and is not revoked.
 4. `sig` is valid for `message` with that key's public key.
 5. `|now − ts| ≤ 300` seconds.
@@ -150,6 +171,19 @@ sig     = Ed25519_sign(environment private key, message)
 
 A report identical to the previous one for the same environment only refreshes
 its *last seen* date.
+
+## On the client
+
+- `stackscan link <code>` stores the signing key as a token
+  `ssk1.<key_id>.<base64url Ed25519 seed>` in the user configuration folder
+  (`~/Library/Application Support/stackscan/keys/` on macOS,
+  `~/.config/stackscan/keys/` on Linux), mode `0600`, and records
+  `{"environments": {"prod": "<key_id>"}}` in `.stackscan.json` at the project
+  root. That file holds no secret and can be committed.
+- In CI, the same token goes in a masked variable `STACKSCAN_KEY`.
+- `STACKSCAN_URL` overrides the base URL (HTTPS required, except
+  `http://localhost` for development). `STACKSCAN_SERVER_KEY="<id>:<base64>"`
+  overrides the built-in server key, for a self-hosted or development server.
 
 ## Report
 

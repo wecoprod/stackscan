@@ -37,6 +37,18 @@ const (
 	cCyan   = "\033[36m"
 )
 
+// cliVersion is the -ldflags version, else the module version recorded by
+// go install github.com/wecoprod/stackscan@vX.Y.Z, else "dev".
+func cliVersion() string {
+	if version != "dev" {
+		return version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return bi.Main.Version
+	}
+	return version
+}
+
 func col(code, s string) string {
 	if !useColor || s == "" {
 		return s
@@ -53,6 +65,12 @@ func main() {
 		case "evaluate":
 			evaluateMain(os.Args[2:])
 			return
+		case "link":
+			linkMain(os.Args[2:])
+			return
+		case "push":
+			pushMain(os.Args[2:])
+			return
 		}
 	}
 	all := flag.Bool("all", false, "include indirect (transitive) dependencies")
@@ -65,19 +83,12 @@ func main() {
 	brief := flag.Bool("brief", false, "short report: only what is at or near end of life (fast)")
 	depth := flag.Int("depth", 4, "maximum directory depth to search for manifests")
 	flag.Usage = func() {
-		fmt.Fprint(os.Stderr, "Usage: stackscan [options] [dir]\n       stackscan hook install|uninstall\n\nScans a project (current directory by default) and compares its versions\nwith the latest releases and end-of-life dates.\n\nOptions:\n")
+		fmt.Fprint(os.Stderr, "Usage: stackscan [options] [dir]\n       stackscan hook install|uninstall\n       stackscan link <code> | push [--env e] [--dry-run]   (stackscan cloud)\n       stackscan evaluate < versions.json\n\nScans a project (current directory by default) and compares its versions\nwith the latest releases and end-of-life dates.\n\nOptions:\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
 	if *showVersion {
-		v := version
-		if v == "dev" {
-			// go install github.com/wecoprod/stackscan@v0.1.0 records the module version.
-			if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
-				v = bi.Main.Version
-			}
-		}
-		fmt.Println("stackscan", v)
+		fmt.Println("stackscan", cliVersion())
 		return
 	}
 

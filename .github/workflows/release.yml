@@ -20,3 +20,5 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STACKSCAN_SERVER_KEY_ID: ${{ vars.STACKSCAN_SERVER_KEY_ID }}
+          STACKSCAN_SERVER_KEY_PUB: ${{ vars.STACKSCAN_SERVER_KEY_PUB }}
