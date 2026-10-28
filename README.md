@@ -74,6 +74,14 @@ Images are mapped to their product: `dunglas/frankenphp:1-php8.4` is PHP 8.4,
 Responses are cached for 24 hours. With no network and no cache, a small
 built-in dataset covers PHP, Symfony, Node.js, PostgreSQL, MySQL and Python.
 
+## Privacy
+
+**Nothing about your project leaves your machine.** stackscan only asks the
+public registries above for the latest version of a product or package, by
+name (`php`, `symfony/framework-bundle`), the same way `composer outdated` or
+`npm outdated` do. Your versions, file paths and project names are never sent
+anywhere. `-offline` turns off even those lookups.
+
 ## Options
 
 ```
