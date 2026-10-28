@@ -7,6 +7,12 @@ without sending it.
 
 Nothing is ever sent unless you run `stackscan link` and `stackscan push`.
 
+## Base URL
+
+`https://stackscan.wecoprod.com/api/v1/`
+
+The CLI uses this address by default; `STACKSCAN_URL` overrides it.
+
 ## Principles
 
 - **Push only.** stackscan cloud never connects to your machines.
