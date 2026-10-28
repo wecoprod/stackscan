@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/wecoprod/stackscan/blob/main/docs/report.schema.json",
+  "title": "stackscan report",
+  "description": "Inventory sent by `stackscan push`, schema version 1. Only these fields are ever sent.",
+  "type": "object",
+  "required": ["schema", "stackscan_version", "scanned_at", "components"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": 1 },
+    "stackscan_version": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "Version of the CLI that produced the report."
+    },
+    "scanned_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the scan ran, RFC 3339."
+    },
+    "git": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Present when the scanned folder is a git repository.",
+      "properties": {
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{7,64}$" },
+        "branch": { "type": "string", "maxLength": 255 }
+      }
+    },
+    "components": {
+      "type": "array",
+      "maxItems": 20000,
+      "items": { "$ref": "#/$defs/component" }
+    }
+  },
+  "$defs": {
+    "component": {
+      "type": "object",
+      "required": ["eco", "name", "version", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "eco": {
+          "enum": ["runtime", "image", "composer", "npm", "go"],
+          "description": "runtime: a product tracked on endoflife.date (php, nodejs, postgresql...); image: a Docker image; otherwise a package ecosystem."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 214,
+          "description": "Product, image repository or package name."
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Installed version, image tag, or version constraint when `declared` is true."
+        },
+        "source": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "Manifest path relative to the scanned folder (e.g. app/composer.lock). Replaced by a hash with `push --redact-paths`."
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 255,
+          "description": "For a runtime deduced from a Docker image: the image repository it comes from."
+        },
+        "direct": {
+          "type": "boolean",
+          "default": false,
+          "description": "Declared directly by the project, not a transitive dependency."
+        },
+        "dev": {
+          "type": "boolean",
+          "default": false,
+          "description": "Development-only dependency."
+        },
+        "declared": {
+          "type": "boolean",
+          "default": false,
+          "description": "Version comes from a constraint (composer.json, package.json engines), not from a lock file."
+        },
+        "floating": {
+          "type": "boolean",
+          "default": false,
+          "description": "The reference can change without a commit (image tag `latest`, `redis:7`...)."
+        }
+      }
+    }
+  }
+}
