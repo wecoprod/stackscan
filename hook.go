@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Git hooks: after a pull, a checkout or a rebase, and before a commit,
@@ -73,10 +74,12 @@ func hookUsage() {
   stackscan hook install --all ~/Development          install in every repository under a folder
   stackscan hook uninstall [--all dir] [repo]         remove the hooks
 
-On git commit, when a manifest is part of the commit (composer.lock,
-package.json, Dockerfile, compose...), stackscan lists the version changes and
-what is at or near end of life. It never blocks the commit, unless installed
-with --strict: it then refuses a commit that brings in an end-of-life version.
+On every git commit, stackscan checks the project. It only speaks when there
+is something new: the commit changes a manifest (composer.lock, package.json,
+Dockerfile, compose...), or a version reached or neared its end of life since
+the last check. Otherwise, at most one reminder line a day.
+It never blocks the commit, unless installed with --strict: it then refuses a
+commit that brings in an end-of-life version.
 --pull also reports after git pull, checkout and rebase.
 Set STACKSCAN_SKIP=1 to silence the hooks for one command.
 `)
@@ -247,6 +250,9 @@ func uninstallHooks(repo string) {
 		}
 		removed++
 	}
+	if p := statePath(top); p != "" {
+		os.Remove(p)
+	}
 	fmt.Printf("%s %s: %d hook(s) removed\n", col(cGreen, "✓"), top, removed)
 }
 
@@ -301,26 +307,53 @@ func runHook(name string, args []string) int {
 	}
 
 	changed := changedManifests(top, oldRev, newRev)
+	if len(changed) == 0 && name != "pre-commit" {
+		return 0
+	}
+
+	// Lifecycle of the whole project as it is now. Every commit checks it:
+	// a version can reach its end of life without any file changing.
+	pr, err := scanProject(top, 4)
+	if err != nil || len(pr.Components) == 0 {
+		return 0
+	}
+	reg := NewRegistry(false)
+	reg.EnrichLifecycle(pr)
+	now := briefKeys(pr)
+	state := loadState(top)
+	defer saveState(top, now)
+
 	if len(changed) == 0 {
+		// Nothing changed in the manifests: only speak when the end-of-life
+		// picture changed since the last check, or once a day as a reminder.
+		known := map[string]bool{}
+		for _, k := range state.keys {
+			known[k] = true
+		}
+		news := map[string]bool{}
+		for _, k := range now {
+			if !known[k] {
+				news[k] = true
+			}
+		}
+		switch {
+		case len(news) > 0:
+			fmt.Println()
+			fmt.Println(col(cBold, "stackscan ·") + col(cDim, " new since the last check"))
+			renderBriefOnly(pr, news)
+			fmt.Println()
+		case len(now) > 0 && state.day != today():
+			fmt.Println(col(cDim, fmt.Sprintf("stackscan: %d component(s) at or near end of life — stackscan -brief", len(now))))
+		}
 		return 0
 	}
 
 	diffs, indirect := manifestDiff(top, oldRev, newRev, changed)
 
-	// Lifecycle of the whole project as it is now.
-	pr, err := scanProject(top, 4)
-	if err != nil {
-		return 0
-	}
-	reg := NewRegistry(false)
-	reg.EnrichLifecycle(pr)
-
 	fmt.Println()
 	fmt.Printf("%s %s\n", col(cBold, "stackscan ·"), col(cDim, strings.Join(changed, ", ")+" changed"))
-	if len(diffs) > 0 {
-		for _, d := range diffs {
-			fmt.Println("  " + d)
-		}
+	for _, d := range diffs {
+		fmt.Println("  " + d)
 	}
 	if indirect > 0 {
 		fmt.Println(col(cDim, fmt.Sprintf("  + %d indirect dependency change(s)", indirect)))
@@ -348,6 +381,55 @@ func runHook(name string, args []string) int {
 		}
 	}
 	return 0
+}
+
+// hookState remembers, per repository, what the last check reported, so the
+// hook only speaks when something new happens.
+type hookState struct {
+	day  string
+	keys []string
+}
+
+func today() string { return time.Now().Format("2006-01-02") }
+
+func statePath(top string) string {
+	p, err := gitOut(top, "rev-parse", "--git-path", "stackscan-state")
+	if err != nil {
+		return ""
+	}
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(top, p)
+	}
+	return p
+}
+
+func loadState(top string) hookState {
+	var s hookState
+	b, err := os.ReadFile(statePath(top))
+	if err != nil {
+		return s
+	}
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if len(lines) > 0 {
+		s.day = lines[0]
+		for _, l := range lines[1:] {
+			if l != "" {
+				s.keys = append(s.keys, l)
+			}
+		}
+	}
+	return s
+}
+
+// saveState records the current picture and the day of the check, so the
+// reminder line shows at most once a day.
+func saveState(top string, keys []string) {
+	p := statePath(top)
+	if p == "" {
+		return
+	}
+	content := today() + "\n" + strings.Join(keys, "\n") + "\n"
+	os.WriteFile(p, []byte(content), 0o644)
 }
 
 // changedManifests lists the manifest files that differ between two

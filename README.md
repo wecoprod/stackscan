@@ -127,9 +127,14 @@ cd my-project && stackscan hook install
 stackscan hook install --all ~/Development     # every repository under a folder
 ```
 
-On `git commit`, when the commit touches a manifest (`composer.lock`,
-`package.json`, Dockerfile, compose files…), stackscan prints what moved and
-what is at or near end of life. When it does not, it stays silent.
+Every `git commit` checks the project, but the hook only speaks when there is
+something new:
+
+- **the commit touches a manifest** (`composer.lock`, `package.json`,
+  Dockerfile, compose files…): what moved, and what is at or near end of life;
+- **a version reached or neared its end of life** since the last check, even
+  without any file change (PostgreSQL 14 on 12 November, say): just that line;
+- **otherwise**, at most one reminder line a day, or nothing at all.
 
 ```
 stackscan · app/composer.lock, compose.yaml changed
