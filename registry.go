@@ -308,7 +308,22 @@ var frameworkProducts = map[string]string{
 }
 
 // Enrich resolves latest versions and EOL dates for every component.
+// EnrichLifecycle only resolves end-of-life data (runtimes and tracked
+// frameworks such as Symfony): a handful of requests, fast enough for a hook.
+func (r *Registry) EnrichLifecycle(pr *Project) {
+	r.enrich(pr, func(c *Component) bool {
+		_, fw := frameworkProducts[c.Eco+"|"+c.Name]
+		return c.Eco == "runtime" || (fw && c.Direct)
+	})
+}
+
 func (r *Registry) Enrich(pr *Project, all bool) {
+	r.enrich(pr, func(c *Component) bool {
+		return all || c.Direct || c.Eco == "runtime"
+	})
+}
+
+func (r *Registry) enrich(pr *Project, want func(*Component) bool) {
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 	for w := 0; w < 8; w++ {
@@ -322,11 +337,8 @@ func (r *Registry) Enrich(pr *Project, all bool) {
 	}
 	for i := range pr.Components {
 		c := &pr.Components[i]
-		if c.Eco == "image" {
-			continue // covered by its runtime line
-		}
-		if !all && !c.Direct && c.Eco != "runtime" {
-			continue
+		if c.Eco == "image" || !want(c) {
+			continue // images are covered by their runtime line
 		}
 		jobs <- i
 	}

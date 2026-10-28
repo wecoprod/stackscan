@@ -45,6 +45,10 @@ func col(code, s string) string {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "hook" {
+		hookMain(os.Args[2:])
+		return
+	}
 	all := flag.Bool("all", false, "include indirect (transitive) dependencies")
 	verbose := flag.Bool("v", false, "also list up-to-date packages")
 	offline := flag.Bool("offline", false, "no network: use the local cache and built-in data only")
@@ -52,9 +56,10 @@ func main() {
 	noColor := flag.Bool("no-color", false, "disable colors")
 	fail := flag.Bool("fail", false, "exit with code 2 when something is end-of-life (for CI)")
 	showVersion := flag.Bool("version", false, "print the version and exit")
+	brief := flag.Bool("brief", false, "short report: only what is at or near end of life (fast)")
 	depth := flag.Int("depth", 4, "maximum directory depth to search for manifests")
 	flag.Usage = func() {
-		fmt.Fprint(os.Stderr, "Usage: stackscan [options] [dir]\n\nScans a project (current directory by default) and compares its versions\nwith the latest releases and end-of-life dates.\n\nOptions:\n")
+		fmt.Fprint(os.Stderr, "Usage: stackscan [options] [dir]\n       stackscan hook install|uninstall [--strict] [--all dir]\n\nScans a project (current directory by default) and compares its versions\nwith the latest releases and end-of-life dates.\n\nOptions:\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -89,9 +94,19 @@ func main() {
 	}
 
 	reg := NewRegistry(*offline)
-	reg.Enrich(pr, *all)
+	if *brief {
+		reg.EnrichLifecycle(pr)
+		fmt.Println(col(cBold, pr.Name))
+		if renderBrief(pr) == 0 {
+			fmt.Println(col(cGreen, "  ✓ nothing at or near end of life"))
+		}
+	} else {
+		reg.Enrich(pr, *all)
+	}
 
-	if *asJSON {
+	if *brief {
+		// already printed
+	} else if *asJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		enc.Encode(pr)
