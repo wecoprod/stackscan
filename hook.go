@@ -49,12 +49,24 @@ func preCommitPath() (string, error) {
 	if top == "" {
 		return "", fmt.Errorf("not a git repository")
 	}
-	if hp := git("config", "core.hooksPath"); hp != "" {
-		return "", fmt.Errorf("hooks are managed by core.hooksPath (%s): add this line to your pre-commit hook:\n  command -v stackscan >/dev/null && stackscan -brief || true", hp)
+	common := git("rev-parse", "--git-common-dir")
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(top, common)
 	}
-	dir := git("rev-parse", "--git-path", "hooks")
-	if !filepath.IsAbs(dir) {
-		dir = filepath.Join(top, dir)
+	dir := filepath.Join(common, "hooks")
+	if hp := git("config", "core.hooksPath"); hp != "" {
+		if strings.HasPrefix(hp, "~/") {
+			home, _ := os.UserHomeDir()
+			hp = filepath.Join(home, hp[2:])
+		}
+		if !filepath.IsAbs(hp) {
+			hp = filepath.Join(top, hp)
+		}
+		// core.hooksPath pointing at the usual .git/hooks is harmless; any
+		// other folder belongs to a hook manager (Husky, CaptainHook...).
+		if filepath.Clean(hp) != filepath.Clean(dir) {
+			return "", fmt.Errorf("hooks are managed by core.hooksPath (%s): add this line to your pre-commit hook:\n  command -v stackscan >/dev/null && stackscan -brief || true", hp)
+		}
 	}
 	os.MkdirAll(dir, 0o755)
 	return filepath.Join(dir, "pre-commit"), nil
